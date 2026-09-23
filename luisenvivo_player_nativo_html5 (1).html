@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LUISENVIVO | The Bunker Sessions - Live HLS Player</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        bunker: {
+                            bg: '#070709',
+                            panel: 'rgba(16, 17, 22, 0.85)',
+                            card: 'rgba(22, 24, 33, 0.6)',
+                            accent: '#8b5cf6',
+                            cyan: '#06b6d4',
+                            magenta: '#ec4899',
+                            glow: '#3b82f6'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- HLS.js Library -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    
+    <!-- Font Awesome Icons & Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        body {
+            background-color: #070709;
+            color: #f3f4f6;
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+
+        /* Glassmorphism Styles */
+        .glass-panel {
+            background: rgba(16, 17, 22, 0.82);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .glass-card {
+            background: rgba(22, 24, 33, 0.55);
+            backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .glass-card:hover {
+            border-color: rgba(6, 182, 212, 0.35);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px -5px rgba(6, 182, 212, 0.18);
+        }
+
+        .glow-button {
+            box-shadow: 0 0 25px rgba(139, 92, 246, 0.35);
+            transition: all 0.3s ease;
+        }
+
+        .glow-button:hover {
+            box-shadow: 0 0 35px rgba(6, 182, 212, 0.6);
+            transform: scale(1.02);
+        }
+
+        /* Ambient Glow Lights */
+        .glow-bg-top {
+            position: absolute;
+            top: -10%;
+            left: 20%;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, rgba(0, 0, 0, 0) 70%);
+            z-index: -1;
+            filter: blur(80px);
+            pointer-events: none;
+        }
+
+        .glow-bg-bottom {
+            position: absolute;
+            bottom: 5%;
+            right: 15%;
+            width: 650px;
+            height: 650px;
+            background: radial-gradient(circle, rgba(236, 72, 153, 0.12) 0%, rgba(0, 0, 0, 0) 70%);
+            z-index: -1;
+            filter: blur(90px);
+            pointer-events: none;
+        }
+
+        /* Video Container Overlay Animation */
+        @keyframes pulseGlow {
+            0%, 100% { opacity: 0.6; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.05); }
+        }
+
+        .pulse-glow {
+            animation: pulseGlow 2.5s infinite ease-in-out;
+        }
+
+        /* Custom Input Range styling */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: rgba(255, 255, 255, 0.12);
+            border-radius: 9999px;
+            height: 6px;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #06b6d4;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(6, 182, 212, 0.8);
+            transition: all 0.2s ease;
+        }
+
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.25);
+            background: #a855f7;
+        }
+
+        /* Pseudo Fullscreen for Fallback */
+        .pseudo-fullscreen {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            z-index: 9999 !important;
+            border-radius: 0 !important;
+            border: none !important;
+        }
+
+        /* Custom Select Option Styling */
+        select option {
+            background-color: #101116;
+            color: #f3f4f6;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-cyan-500 selection:text-black">
+
+    <!-- Ambient Glow Effects -->
+    <div class="glow-bg-top"></div>
+    <div class="glow-bg-bottom"></div>
+
+    <header class="w-full border-b border-white/10 glass-panel sticky top-0 z-50 shadow-2xl">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+            
+            <!-- DJ Logo & Branding -->
+            <div class="flex items-center gap-3.5">
+                <div class="relative flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-cyan-500 text-white font-bold text-xl shadow-lg shadow-purple-500/25 border border-white/20">
+                    <i class="fa-solid fa-record-vinyl text-2xl animate-spin-slow"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl sm:text-2xl font-black tracking-wider text-white flex items-center gap-2">
+                        LUISENVIVO
+                        <span class="text-[10px] font-normal px-2 py-0.5 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 font-mono tracking-widest">LIVE</span>
+                    </h1>
+                    <p class="text-xs text-gray-400 font-mono tracking-widest uppercase">The Bunker Sessions • Progressive House</p>
+                </div>
+            </div>
+
+            <!-- Live Broadcast Badge & Timer -->
+            <div class="flex items-center gap-3 sm:gap-5">
+                <div class="hidden sm:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/40 border border-white/10 text-xs font-mono text-gray-300">
+                    <i class="fa-regular fa-clock text-cyan-400"></i>
+                    <span id="live-timer" class="font-bold">00:00:00</span>
+                </div>
+
+                <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-red-950/60 border border-red-500/50 text-red-400 text-xs font-mono font-bold shadow-lg shadow-red-900/30">
+                    <span class="relative flex h-2.5 w-2.5">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                    </span>
+                    <span>EN VIVO</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 w-full space-y-8 flex-grow">
+        
+        <!-- Stream Title Header -->
+        <div class="text-center space-y-2">
+            <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-purple-950/60 border border-purple-500/30 text-purple-300 text-xs font-mono tracking-wider">
+                <i class="fa-solid fa-sliders text-cyan-400"></i>
+                <span>SEÑAL EN DIRECTO HIGH QUALITY • STREAMING HTML5</span>
+            </div>
+            <h2 class="text-3xl sm:text-5xl font-black tracking-tight text-white drop-shadow-lg">
+                THE BUNKER SESSIONS
+            </h2>
+            <p class="text-gray-400 max-w-xl mx-auto text-xs sm:text-sm font-mono">
+                Transmisión continua de video y audio en alta fidelidad directo desde la cabina.
+            </p>
+        </div>
+
+        <section class="glass-panel rounded-3xl p-3 sm:p-5 shadow-2xl relative border border-white/10 space-y-4 overflow-hidden">
+            
+            <!-- Video Player Screen Wrap -->
+            <div id="video-wrapper" class="relative w-full aspect-video bg-black rounded-2xl overflow-hidden border border-white/10 shadow-inner group">
+                
+                <!-- Native HTML5 Video Element -->
+                <video id="hls-video" class="w-full h-full object-contain bg-black" playsinline poster="https://placehold.co/1280x720/101116/8b5cf6?text=LUISENVIVO+THE+BUNKER+SESSIONS"></video>
+
+                <!-- Unmute / Start Playback Overlay -->
+                <div id="video-overlay" class="absolute inset-0 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center gap-4 transition-all duration-500 z-20">
+                    <button onclick="startStreamPlayback()" class="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-cyan-500 text-white text-3xl sm:text-4xl flex items-center justify-center glow-button pulse-glow border border-white/30 cursor-pointer">
+                        <i id="overlay-play-icon" class="fa-solid fa-play ml-1"></i>
+                    </button>
+                    <div class="text-center space-y-1">
+                        <span class="text-sm sm:text-base font-bold text-white font-mono tracking-wider block">TRANSMITIR EN VIVO</span>
+                        <span class="text-xs text-gray-400 font-mono">Haz clic para activar audio y video en tiempo real</span>
+                    </div>
+                </div>
+
+                <!-- Custom Overlay Controls on Video Hover -->
+                <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-between z-10">
+                    <div class="flex items-center gap-3">
+                        <button onclick="togglePlay()" class="text-white hover:text-cyan-400 text-lg p-2 transition">
+                            <i id="quick-play-icon" class="fa-solid fa-pause"></i>
+                        </button>
+                        <button onclick="toggleMute()" class="text-white hover:text-cyan-400 text-lg p-2 transition">
+                            <i id="quick-mute-icon" class="fa-solid fa-volume-high"></i>
+                        </button>
+                        <span id="stream-status-tag" class="text-xs font-mono text-cyan-300 bg-cyan-950/80 px-2.5 py-1 rounded border border-cyan-500/30">LIVE HLS</span>
+                    </div>
+
+                    <button onclick="toggleFullscreen()" class="text-white hover:text-cyan-400 text-lg p-2 transition" title="Pantalla Completa">
+                        <i class="fa-solid fa-expand"></i>
+                    </button>
+                </div>
+
+            </div>
+
+            <div class="flex flex-col md:flex-row items-center justify-between gap-4 pt-2 px-2">
+                
+                <!-- Main Play / Pause Button & Label -->
+                <div class="flex items-center gap-4 w-full md:w-auto justify-center md:justify-start">
+                    <button id="main-play-btn" onclick="togglePlay()" class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-purple-600 to-cyan-500 text-black text-xl flex items-center justify-center glow-button cursor-pointer flex-shrink-0">
+                        <i id="main-play-icon" class="fa-solid fa-pause"></i>
+                    </button>
+                    <div>
+                        <div class="text-xs font-mono text-gray-400 uppercase tracking-wider">Estado de Transmisión</div>
+                        <div id="player-status-label" class="text-sm font-bold text-cyan-400 font-mono">Conectado • En Vivo</div>
+                    </div>
+                </div>
+
+                <!-- Volume Bar -->
+                <div class="flex items-center gap-3 w-full md:w-56 glass-card p-3 rounded-2xl border border-white/5">
+                    <button id="volume-btn" onclick="toggleMute()" class="text-gray-400 hover:text-cyan-400 transition w-7 text-center">
+                        <i id="volume-icon" class="fa-solid fa-volume-high text-base"></i>
+                    </button>
+                    <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.85" oninput="adjustVolume(this.value)" class="w-full cursor-pointer">
+                    <span id="volume-text" class="text-xs font-mono text-cyan-400 w-9 text-right">85%</span>
+                </div>
+
+                <!-- Stream Quality Selector Dropdown -->
+                <div class="flex items-center gap-2 w-full md:w-auto justify-between md:justify-end">
+                    <div class="flex items-center gap-2 glass-card px-3 py-2 rounded-xl border border-white/10 text-xs font-mono text-gray-300">
+                        <i class="fa-solid fa-gear text-purple-400"></i>
+                        <span class="text-gray-400 hidden lg:inline">Calidad:</span>
+                        <select id="quality-selector" onchange="changeQuality(this.value)" class="bg-transparent text-cyan-400 font-bold focus:outline-none cursor-pointer border-none pr-1">
+                            <option value="-1">Auto (Adaptativo)</option>
+                            <option value="orig">Original (3 Mbps)</option>
+                            <option value="hi">Alta (2 Mbps)</option>
+                            <option value="low">Baja (700 kbps)</option>
+                        </select>
+                    </div>
+
+                    <!-- Fullscreen & Copy Link Tools -->
+                    <div class="flex items-center gap-2">
+                        <button onclick="toggleFullscreen()" class="px-3.5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-mono text-gray-300 hover:text-white transition flex items-center gap-2 cursor-pointer" title="Pantalla Completa">
+                            <i class="fa-solid fa-expand text-cyan-400"></i>
+                            <span class="hidden sm:inline">PANTALLA COMPLETA</span>
+                        </button>
+
+                        <button onclick="copyStreamURL()" class="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white transition" title="Copiar enlace HLS .m3u8">
+                            <i class="fa-solid fa-link text-sm"></i>
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+
+        </section>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            
+            <!-- Broadcast Schedule Card -->
+            <div class="md:col-span-2 glass-panel rounded-2xl p-6 border border-white/10 space-y-4">
+                <div class="flex items-center justify-between border-b border-white/10 pb-3">
+                    <h3 class="text-sm font-bold text-white flex items-center gap-2 tracking-wider uppercase">
+                        <i class="fa-regular fa-calendar-days text-cyan-400"></i>
+                        Programación de Sesiones
+                    </h3>
+                    <span class="text-xs font-mono text-gray-400">HORARIO ARGENTINA (GMT-3)</span>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="glass-card rounded-2xl p-4 space-y-1.5">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-mono text-purple-400 font-bold">LUNES A JUEVES</span>
+                            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800">20:00 HS</span>
+                        </div>
+                        <div class="text-sm font-bold text-white">Bunker Warmup Sessions</div>
+                        <p class="text-xs text-gray-400">Selección progresiva tenue, groove constante y atmósferas envolventes.</p>
+                    </div>
+
+                    <div class="glass-card rounded-2xl p-4 space-y-1.5">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-mono text-cyan-400 font-bold">SÁBADOS</span>
+                            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">22:00 HS</span>
+                        </div>
+                        <div class="text-sm font-bold text-white">Global Extended Club Set</div>
+                        <p class="text-xs text-gray-400">Sesiones extendidas de Melodic Techno y Progressive House en vivo.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- External Platforms Access Card -->
+            <div class="glass-panel rounded-2xl p-6 border border-white/10 space-y-4 flex flex-col justify-between">
+                <div>
+                    <h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4 tracking-wider uppercase">
+                        <i class="fa-solid fa-satellite-dish text-purple-400"></i>
+                        Plataformas Oficiales
+                    </h3>
+                    <div class="space-y-2.5">
+                        <a href="https://twitch.tv/luisenvivo" target="_blank" rel="noopener" class="flex items-center justify-between p-3 rounded-xl bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/30 text-xs font-mono text-purple-200 transition">
+                            <span class="flex items-center gap-2"><i class="fa-brands fa-twitch text-lg text-purple-400"></i> Twitch Stream</span>
+                            <i class="fa-solid fa-arrow-up-right-from-square text-xs opacity-70"></i>
+                        </a>
+                        <a href="https://kick.com/luisenvivo" target="_blank" rel="noopener" class="flex items-center justify-between p-3 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/30 text-xs font-mono text-emerald-200 transition">
+                            <span class="flex items-center gap-2"><i class="fa-solid fa-bolt text-lg text-emerald-400"></i> Kick Channel</span>
+                            <i class="fa-solid fa-arrow-up-right-from-square text-xs opacity-70"></i>
+                        </a>
+                        <a href="https://hearthis.at/luisenvivo/" target="_blank" rel="noopener" class="flex items-center justify-between p-3 rounded-xl bg-cyan-950/40 hover:bg-cyan-900/60 border border-cyan-500/30 text-xs font-mono text-cyan-200 transition">
+                            <span class="flex items-center gap-2"><i class="fa-solid fa-cloud text-lg text-cyan-400"></i> Hearthis.at</span>
+                            <i class="fa-solid fa-arrow-up-right-from-square text-xs opacity-70"></i>
+                        </a>
+                    </div>
+                </div>
+                <div class="text-[10px] font-mono text-gray-500 text-center border-t border-white/5 pt-3">
+                    BUNKER STUDIO ONLINE
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <footer class="w-full border-t border-white/10 glass-panel py-6 mt-10">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-gray-400 font-mono">
+            <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+                <span>LUISENVIVO | HTML5 Native Video Stream</span>
+            </div>
+            <div>
+                <span>Powered by HLS.js & Native Web Engine</span>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-6 right-6 px-4 py-3 rounded-xl bg-cyan-950/90 text-white border border-cyan-500/40 shadow-2xl backdrop-blur-md opacity-0 pointer-events-none transition-all duration-300 transform translate-y-2 flex items-center gap-2 z-50 text-xs font-mono">
+        <i class="fa-solid fa-circle-check text-cyan-400"></i>
+        <span id="toast-msg">Notificación</span>
+    </div>
+
+    <script>
+        // Hearthis Stream Base URLs
+        const masterStreamUrl = 'https://streamlive8.hearthis.at/hls/9722627.m3u8';
+        const qualityStreams = {
+            'orig': 'https://streamlive8.hearthis.at/hls/9722627_orig/index.m3u8',
+            'hi': 'https://streamlive8.hearthis.at/hls/9722627_hi/index.m3u8',
+            'low': 'https://streamlive8.hearthis.at/hls/9722627_low/index.m3u8'
+        };
+
+        // DOM Elements
+        const video = document.getElementById('hls-video');
+        const videoOverlay = document.getElementById('video-overlay');
+        const mainPlayBtn = document.getElementById('main-play-btn');
+        const mainPlayIcon = document.getElementById('main-play-icon');
+        const quickPlayIcon = document.getElementById('quick-play-icon');
+        const playerStatusLabel = document.getElementById('player-status-label');
+        const volumeSlider = document.getElementById('volume-slider');
+        const volumeText = document.getElementById('volume-text');
+        const volumeIcon = document.getElementById('volume-icon');
+        const quickMuteIcon = document.getElementById('quick-mute-icon');
+        const liveTimer = document.getElementById('live-timer');
+        const qualitySelector = document.getElementById('quality-selector');
+
+        let hlsPlayer = null;
+        let isPlaying = false;
+        let isMuted = false;
+        let previousVolume = 0.85;
+        let startTime = Date.now();
+
+        // Live Timer Calculation
+        setInterval(() => {
+            const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+            const hrs = String(Math.floor(elapsedSeconds / 3600)).padStart(2, '0');
+            const mins = String(Math.floor((elapsedSeconds % 3600) / 60)).padStart(2, '0');
+            const secs = String(elapsedSeconds % 60).padStart(2, '0');
+            liveTimer.innerText = `${hrs}:${mins}:${secs}`;
+        }, 1000);
+
+        function initHlsVideo(sourceUrl = masterStreamUrl) {
+            if (hlsPlayer) {
+                hlsPlayer.destroy();
+            }
+
+            if (Hls.isSupported()) {
+                hlsPlayer = new Hls({
+                    enableWorker: true,
+                    lowLatencyMode: true,
+                    backBufferLength: 90
+                });
+
+                hlsPlayer.loadSource(sourceUrl);
+                hlsPlayer.attachMedia(video);
+
+                hlsPlayer.on(Hls.Events.MANIFEST_PARSED, function (event, data) {
+                    console.log('Manifest parsed. Levels available:', data.levels);
+                    
+                    // Auto populate qualities dynamically if loaded from master playlist
+                    if (sourceUrl === masterStreamUrl && data.levels.length > 0) {
+                        populateLevelsFromManifest(data.levels);
+                    }
+
+                    // Attempt playback
+                    if (isPlaying) {
+                        video.play().catch(e => console.warn('Play prevented:', e));
+                    }
+                });
+
+                hlsPlayer.on(Hls.Events.ERROR, function (event, data) {
+                    if (data.fatal) {
+                        playerStatusLabel.innerText = "Reconectando señal...";
+                        playerStatusLabel.className = "text-sm font-bold text-amber-400 font-mono";
+                        switch (data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                hlsPlayer.startLoad();
+                                break;
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                hlsPlayer.recoverMediaError();
+                                break;
+                            default:
+                                initHlsVideo(sourceUrl);
+                                break;
+                        }
+                    }
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                // Native Safari HLS
+                video.src = sourceUrl;
+                if (isPlaying) video.play();
+            }
+        }
+
+        // Dynamically populate quality selector from HLS levels if parsed
+        function populateLevelsFromManifest(levels) {
+            const currentVal = qualitySelector.value;
+            qualitySelector.innerHTML = '<option value="-1">Auto (Adaptativo)</option>';
+            
+            levels.forEach((level, index) => {
+                const bitrateMbps = (level.bitrate / 1000000).toFixed(1);
+                const height = level.height ? `${level.height}p` : `${bitrateMbps} Mbps`;
+                const option = document.createElement('option');
+                option.value = index;
+                option.innerText = `${height} (${bitrateMbps} Mbps)`;
+                qualitySelector.appendChild(option);
+            });
+
+            // Re-add explicit endpoints as backup choices
+            const origOpt = document.createElement('option');
+            origOpt.value = 'orig';
+            origOpt.innerText = 'Forzar Original (3 Mbps)';
+            qualitySelector.appendChild(origOpt);
+        }
+
+        function changeQuality(selectedQuality) {
+            if (!hlsPlayer) return;
+
+            if (selectedQuality === '-1') {
+                // Auto / Adaptive mode
+                if (hlsPlayer.url !== masterStreamUrl) {
+                    initHlsVideo(masterStreamUrl);
+                } else {
+                    hlsPlayer.currentLevel = -1;
+                }
+                showToast('Calidad: Adaptativa (Auto)');
+            } else if (qualityStreams[selectedQuality]) {
+                // Direct specific sub-stream URL
+                initHlsVideo(qualityStreams[selectedQuality]);
+                const label = selectedQuality === 'orig' ? 'Original 3Mbps' : selectedQuality === 'hi' ? 'Alta 2Mbps' : 'Baja 700kbps';
+                showToast(`Calidad fijada: ${label}`);
+            } else {
+                // Specific level index inside master playlist
+                hlsPlayer.currentLevel = parseInt(selectedQuality, 10);
+                showToast(`Calidad cambiada al nivel ${selectedQuality}`);
+            }
+        }
+
+        // Start Stream via User Overlay Click
+        function startStreamPlayback() {
+            video.muted = false;
+            if (!hlsPlayer && !video.src) {
+                initHlsVideo(masterStreamUrl);
+            }
+            video.play().then(() => {
+                isPlaying = true;
+                videoOverlay.classList.add('opacity-0', 'pointer-events-none');
+                updatePlayUI(true);
+            }).catch(err => {
+                console.error("Error al iniciar video:", err);
+            });
+        }
+
+        // Toggle Play / Pause
+        function togglePlay() {
+            if (!hlsPlayer && !video.src) {
+                initHlsVideo(masterStreamUrl);
+            }
+
+            if (video.paused) {
+                video.play().then(() => {
+                    isPlaying = true;
+                    videoOverlay.classList.add('opacity-0', 'pointer-events-none');
+                    updatePlayUI(true);
+                });
+            } else {
+                video.pause();
+                isPlaying = false;
+                videoOverlay.classList.remove('opacity-0', 'pointer-events-none');
+                updatePlayUI(false);
+            }
+        }
+
+        function updatePlayUI(playing) {
+            if (playing) {
+                mainPlayIcon.className = 'fa-solid fa-pause';
+                quickPlayIcon.className = 'fa-solid fa-pause';
+                playerStatusLabel.innerText = 'Transmitiendo en vivo';
+                playerStatusLabel.className = 'text-sm font-bold text-cyan-400 font-mono';
+            } else {
+                mainPlayIcon.className = 'fa-solid fa-play ml-0.5';
+                quickPlayIcon.className = 'fa-solid fa-play ml-0.5';
+                playerStatusLabel.innerText = 'En Pausa';
+                playerStatusLabel.className = 'text-sm font-bold text-gray-400 font-mono';
+            }
+        }
+
+        function adjustVolume(val) {
+            video.volume = val;
+            volumeText.innerText = `${Math.round(val * 100)}%`;
+            if (val == 0) {
+                volumeIcon.className = 'fa-solid fa-volume-xmark text-red-400';
+                quickMuteIcon.className = 'fa-solid fa-volume-xmark text-red-400';
+                isMuted = true;
+            } else if (val < 0.5) {
+                volumeIcon.className = 'fa-solid fa-volume-low text-cyan-400';
+                quickMuteIcon.className = 'fa-solid fa-volume-low text-white';
+                isMuted = false;
+            } else {
+                volumeIcon.className = 'fa-solid fa-volume-high text-cyan-400';
+                quickMuteIcon.className = 'fa-solid fa-volume-high text-white';
+                isMuted = false;
+            }
+        }
+
+        function toggleMute() {
+            if (isMuted) {
+                video.volume = previousVolume;
+                volumeSlider.value = previousVolume;
+                adjustVolume(previousVolume);
+            } else {
+                previousVolume = video.volume;
+                video.volume = 0;
+                volumeSlider.value = 0;
+                adjustVolume(0);
+            }
+        }
+
+        async function toggleFullscreen() {
+            const wrapper = document.getElementById('video-wrapper');
+
+            if (wrapper.classList.contains('pseudo-fullscreen')) {
+                wrapper.classList.remove('pseudo-fullscreen');
+                showToast('Pantalla completa desactivada');
+                return;
+            }
+
+            if (!document.fullscreenElement) {
+                try {
+                    if (wrapper.requestFullscreen) {
+                        await wrapper.requestFullscreen();
+                    } else if (wrapper.webkitRequestFullscreen) {
+                        await wrapper.webkitRequestFullscreen();
+                    } else {
+                        wrapper.classList.add('pseudo-fullscreen');
+                    }
+                } catch (err) {
+                    console.warn('Native fullscreen blocked by iframe permissions policy. Switching to pseudo-fullscreen mode:', err);
+                    wrapper.classList.add('pseudo-fullscreen');
+                    showToast('Pantalla completa en ventana');
+                }
+            } else {
+                try {
+                    if (document.exitFullscreen) {
+                        await document.exitFullscreen();
+                    } else if (document.webkitExitFullscreen) {
+                        await document.webkitExitFullscreen();
+                    }
+                } catch (err) {
+                    wrapper.classList.remove('pseudo-fullscreen');
+                }
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                const wrapper = document.getElementById('video-wrapper');
+                if (wrapper && wrapper.classList.contains('pseudo-fullscreen')) {
+                    wrapper.classList.remove('pseudo-fullscreen');
+                    showToast('Pantalla completa desactivada');
+                }
+            }
+        });
+
+        function copyStreamURL() {
+            const currentQuality = qualitySelector.value;
+            let targetUrl = masterStreamUrl;
+            if (qualityStreams[currentQuality]) {
+                targetUrl = qualityStreams[currentQuality];
+            }
+
+            const temp = document.createElement('input');
+            document.body.appendChild(temp);
+            temp.value = targetUrl;
+            temp.select();
+            document.execCommand('copy');
+            document.body.removeChild(temp);
+            showToast('URL del flujo copiada al portapapeles');
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-msg').innerText = msg;
+            toast.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
+            toast.classList.add('opacity-100', 'translate-y-0');
+            setTimeout(() => {
+                toast.classList.remove('opacity-100', 'translate-y-0');
+                toast.classList.add('opacity-0', 'pointer-events-none', 'translate-y-2');
+            }, 3000);
+        }
+
+        window.onload = function () {
+            video.volume = 0.85;
+            initHlsVideo(masterStreamUrl);
+        };
+    </script>
+</body>
+</html>
